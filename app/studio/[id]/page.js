@@ -23,7 +23,8 @@ export default function StudioGallery() {
   const [picked, setPicked] = useState({});
 
   const load = useCallback(async () => {
-    const { data: gal } = await supabase.from('galleries').select('*').eq('id', id).maybeSingle();
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data: gal } = await supabase.from('galleries').select('*').eq('id', id).eq('photographer_id', session?.user?.id).maybeSingle();
     if (!gal) return setG(false);
     setG(gal);
     const ph = await fetchPhotos(id);

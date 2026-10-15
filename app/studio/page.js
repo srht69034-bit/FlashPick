@@ -21,8 +21,10 @@ export default function Dashboard() {
   const [created, setCreated] = useState(null);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
-  const load = useCallback(async () => {
-    const { data } = await supabase.from('galleries').select('*').order('created_at', { ascending: false });
+  const [role, setRole] = useState(null);
+
+  const load = useCallback(async (uid) => {
+    const { data } = await supabase.from('galleries').select('*').eq('photographer_id', uid).order('created_at', { ascending: false });
     const { data: st } = await supabase.from('gallery_stats').select('*');
     const gl = data || [];
     setList(gl);
@@ -37,7 +39,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (user === null) router.replace('/studio/login');
-    if (user) load();
+    if (user) {
+      supabase.from('profiles').select('role').eq('id', user.id).single().then(({ data }) => {
+        const r = data?.role || 'photographer';
+        setRole(r);
+        if (r === 'photographer') load(user.id);
+      });
+    }
   }, [user?.id, user === null]); // eslint-disable-line
 
   async function create(e) {
@@ -47,9 +55,16 @@ export default function Dashboard() {
     const j = await r.json();
     setBusy(false);
     if (!r.ok) return setErr(j.error || 'שגיאה ביצירת הגלריה');
-    setCreated(j); setOpen(false); setForm(EMPTY); load();
+    setCreated(j); setOpen(false); setForm(EMPTY); load(user.id);
   }
 
+  if (role === 'client') return (
+    <main className="page"><div className="authbox">
+      <h1>זה חשבון של לקוחה</h1>
+      <p className="mute">אזור הצלמות מיועד לצלמות בלבד. הגלריה שלך נמצאת בקישור האישי שקיבלת מהצלמת.</p>
+      <button className="btn" onClick={() => supabase.auth.signOut().then(() => router.replace('/studio/login'))}>החלפת משתמש</button>
+    </div></main>
+  );
   if (!user || !list) return <main className="page"><div className="wrap mute" style={{ paddingTop: 40 }}>טוען…</div></main>;
 
   const waiting = list.filter((g) => g.status === 'open').length;
