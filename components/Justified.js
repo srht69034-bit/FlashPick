@@ -12,7 +12,7 @@ export default function Justified({ items, render, target = 250, gap = 8 }) {
     return () => ro.disconnect();
   }, []);
 
-  const t = w && w < 600 ? 150 : target;
+  const t = w && w < 600 ? 280 : target;
   const rows = []; let row = [], sum = 0;
   if (w) for (const it of items) {
     const r = it.ratio || 0.75;

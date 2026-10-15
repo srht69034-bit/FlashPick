@@ -3,7 +3,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import AuthForm from '@/components/AuthForm';
 import Justified from '@/components/Justified';
-import { supabase, authedFetch, fetchPhotos, signedUrls } from '@/lib/supabase';
+import { supabase, authedFetch, fetchPhotos } from '@/lib/supabase';
+import { SecureImg, useSecureUrl } from '@/lib/secure';
 import { useUser } from '@/lib/useUser';
 
 const stateOf = (p) => (p.selected ? 'yes' : p.rejected ? 'no' : null);
@@ -24,7 +25,6 @@ export default function ClientGallery() {
   const user = useUser();
   const [g, setG] = useState(null); // null = טוען, false = אין גישה
   const [photos, setPhotos] = useState([]);
-  const [urls, setUrls] = useState({});
   const [tab, setTab] = useState('pick');
   const [view, setView] = useState('all');
   const [lb, setLb] = useState(null);
@@ -49,17 +49,10 @@ export default function ClientGallery() {
     const maxPage = Math.max(0, ...ph.map((p) => p.album_page || 0));
     setPageCount(Math.max(1, maxPage));
     if (maxPage > 0) setAlbumOn(true);
-    setUrls(await signedUrls(ph.map((p) => p.path)));
   }, [id]);
 
   useEffect(() => { if (user) load(); }, [user?.id, load]); // eslint-disable-line
   useEffect(() => { if (user && !sessionStorage.getItem('intro-' + id)) setIntro(true); }, [user?.id, id]); // eslint-disable-line
-
-  useEffect(() => {
-    if (!user || !photos.length) return;
-    const t = setInterval(async () => setUrls(await signedUrls(photos.map((p) => p.path))), 50 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [user?.id, photos.length]); // eslint-disable-line
 
   // ---- נתונים נגזרים (לפני כל return מוקדם) ----
   const locked = g?.status === 'submitted';
@@ -69,6 +62,7 @@ export default function ClientGallery() {
   const rejectedN = photos.filter((p) => p.rejected).length;
   const shown = photos.filter((p) => view === 'all' || (view === 'yes' && p.selected) || (view === 'no' && p.rejected) || (view === 'none' && !p.selected && !p.rejected));
   const cur = lb !== null ? shown[lb] : null;
+  const introBg = useSecureUrl(photos[0]?.path);
   const say = (m) => { setToast(m); setTimeout(() => setToast(''), 2600); };
   const patch = (pid, f) => setPhotos((prev) => prev.map((p) => (p.id === pid ? { ...p, ...f } : p)));
 
@@ -159,7 +153,7 @@ export default function ClientGallery() {
   );
   if (!g) return <main className="page"><div className="wrap mute" style={{ paddingTop: 40 }}>טוען…</div></main>;
 
-  const img = (p, extra) => urls[p.path] && <img src={urls[p.path]} alt="" draggable={false} loading="lazy" decoding="async" {...extra} />;
+  const img = (p) => <SecureImg path={p.path} />;
   const items = shown.map((p, i) => ({ id: p.id, ratio: p.w && p.h ? p.w / p.h : 0.75, p, i }));
   const unplaced = selected.filter((p) => !p.album_page);
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
@@ -171,7 +165,7 @@ export default function ClientGallery() {
     <main className="page" onContextMenu={(e) => e.preventDefault()}>
       {intro && (
         <div className="intro">
-          {photos[0] && urls[photos[0].path] && <div className="bgimg" style={{ backgroundImage: `url(${urls[photos[0].path]})` }} />}
+          {introBg && <div className="bgimg" style={{ backgroundImage: `url(${introBg})` }} />}
           <div className="box">
             <div className="mute" style={{ marginBottom: 8 }}>{g.client_name ? `שלום ${g.client_name}` : 'שלום'}</div>
             <h1>{g.title}</h1>
@@ -300,7 +294,7 @@ export default function ClientGallery() {
           onTouchStart={(e) => setTouchX(e.touches[0].clientX)}
           onTouchEnd={(e) => { if (touchX === null) return; const d = e.changedTouches[0].clientX - touchX; setTouchX(null);
             if (d < -60) setLb(Math.min(lb + 1, shown.length - 1)); else if (d > 60) setLb(Math.max(lb - 1, 0)); }}>
-          <img src={urls[cur.path]} alt="" draggable={false} onClick={(e) => e.stopPropagation()} />
+          <SecureImg key={cur.id} path={cur.path} onClick={(e) => e.stopPropagation()} />
           <span className="cnt">{lb + 1} / {shown.length}</span>
           <button className="x" onClick={() => setLb(null)} aria-label="סגירה">✕</button>
           <button className="nav-b" style={{ right: 16 }} onClick={(e) => { e.stopPropagation(); setLb(Math.max(lb - 1, 0)); }} aria-label="הקודמת">›</button>
@@ -324,7 +318,7 @@ export default function ClientGallery() {
           <div className="panes">
             {cmpPhotos.map((p) => (
               <div key={p.id} className={'pane ' + (stateOf(p) || '')}>
-                {urls[p.path] && <img src={urls[p.path]} alt="" draggable={false} />}
+                <SecureImg path={p.path} />
                 {!locked && (
                   <div className="row">
                     <button className={'big no' + (stateOf(p) === 'no' ? ' on' : '')} onClick={() => mark(p, 'no')}>✗</button>

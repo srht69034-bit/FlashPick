@@ -2,7 +2,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { supabase, authedFetch, signedUrls } from '@/lib/supabase';
+import { supabase, authedFetch } from '@/lib/supabase';
+import { SecureImg } from '@/lib/secure';
 import { useUser } from '@/lib/useUser';
 import Modal from '@/components/Modal';
 
@@ -33,8 +34,7 @@ export default function Dashboard() {
       const { data: p } = await supabase.from('photos').select('path').eq('gallery_id', g.id).order('position').limit(1);
       return p?.[0]?.path || null;
     }));
-    const urls = await signedUrls(firsts.filter(Boolean));
-    setCovers(Object.fromEntries(gl.map((g, i) => [g.id, firsts[i] ? urls[firsts[i]] : null])));
+    setCovers(Object.fromEntries(gl.map((g, i) => [g.id, firsts[i]])));
   }, []);
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export default function Dashboard() {
             return (
               <Link key={g.id} href={`/studio/${g.id}`} className="gcard">
                 <div className="cover">
-                  {covers[g.id] ? <img src={covers[g.id]} alt="" /> : <div className="nocover">אין עדיין תמונות</div>}
+                  {covers[g.id] ? <SecureImg path={covers[g.id]} /> : <div className="nocover">אין עדיין תמונות</div>}
                   <span className={'pill ' + (done ? 'yes' : 'warn')}>{done ? '✓ הבחירה הושלמה' : 'ממתינה ללקוחה'}</span>
                 </div>
                 <div className="gbody">

@@ -165,3 +165,40 @@ textarea.inp{resize:vertical;min-height:50px}
 
 .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 22px;border-radius:99px;z-index:90;font-weight:700;animation:rise .25s;box-shadow:0 12px 30px rgba(0,0,0,.4)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ===== רספונסיביות ===== */
+.page{overflow-x:clip}
+.gtitle{margin:0;font-size:34px;letter-spacing:-.03em;line-height:1.15}
+.ghead h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+.lb>img{max-height:calc(100vh - 150px);max-height:calc(100dvh - 150px)}
+.drops{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+@media(hover:none){.rb.del{opacity:1}}
+@media(max-width:700px){
+  .stats{grid-template-columns:repeat(3,1fr);gap:8px}
+  .stat{padding:12px 10px}.stat b{font-size:26px}.stat span{font-size:12px}
+  .gtitle{font-size:26px}
+}
+@media(max-width:600px){
+  .wrap{padding:0 12px 90px}
+  .nav{padding:12px 0}
+  .g2{grid-template-columns:1fr}
+  .modal{padding:18px}
+  .authbox{padding-top:8vh}
+  .authbox h1{font-size:28px}
+  .rb{width:32px;height:32px;font-size:14px}
+  .acts{gap:6px;padding:16px 4px 6px}
+  .tag{width:24px;height:24px;font-size:13px}
+  .ghead .in{padding:8px 12px;gap:10px}
+  .ghead .in>.row{width:100%;justify-content:space-between;flex-wrap:nowrap}
+  .ghead .in>.row .btn.pri{flex:1}
+  .ghead h1{max-width:45vw;font-size:17px}
+  .lb .nav-b{width:40px;height:40px;font-size:22px}
+  .lb .bot{gap:8px;flex-wrap:wrap;padding:0 10px}
+  .big{padding:10px 16px;font-size:14px}
+  .lb>img{max-width:100vw;border-radius:0}
+  .drop{padding:20px 14px}
+  .tabs button,.filters button{padding:6px 12px}
+  .notice{padding:12px}
+  .intro .btn{width:100%}
+  .toast{max-width:92vw;text-align:center;border-radius:16px}
+}

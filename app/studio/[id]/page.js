@@ -2,7 +2,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase, BUCKET, fetchPhotos, signedUrls } from '@/lib/supabase';
+import { supabase, BUCKET, fetchPhotos } from '@/lib/supabase';
+import { SecureImg } from '@/lib/secure';
 import { makePreview, runPool } from '@/lib/image';
 import { useUser } from '@/lib/useUser';
 import Justified from '@/components/Justified';
@@ -13,7 +14,6 @@ export default function StudioGallery() {
   const user = useUser();
   const [g, setG] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [urls, setUrls] = useState({});
   const [wm, setWm] = useState('');
   const [prog, setProg] = useState(null);
   const [over, setOver] = useState(false);
@@ -29,7 +29,6 @@ export default function StudioGallery() {
     setG(gal);
     const ph = await fetchPhotos(id);
     setPhotos(ph);
-    setUrls(await signedUrls(ph.map((p) => p.path)));
   }, [id]);
 
   useEffect(() => {
@@ -108,7 +107,7 @@ export default function StudioGallery() {
 
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 18 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 34, letterSpacing: '-.03em' }}>{g.title}</h1>
+          <h1 className="gtitle">{g.title}</h1>
           <div className="mute">{g.client_name || g.client_email} · {photos.length} תמונות · ✓ {selected.length} מתוך {g.quota} · ✗ {rejected} · {g.status === 'submitted' ? 'הבחירה הושלמה' : 'ממתינה ללקוחה'}</div>
         </div>
         <div className="row">
@@ -162,7 +161,7 @@ export default function StudioGallery() {
           <Justified items={items} render={({ p }) => (
             <div className={'tile' + (manage && picked[p.id] ? ' picked' : '')} style={{ cursor: manage ? 'pointer' : 'default' }}
               onClick={() => manage && setPicked({ ...picked, [p.id]: !picked[p.id] })}>
-              {urls[p.path] && <img src={urls[p.path]} alt="" loading="lazy" decoding="async" />}
+              <SecureImg path={p.path} />
               {p.selected && <span className="tag yes">✓</span>}
               {p.rejected && <span className="tag no">✗</span>}
               {manage && <span className="chk">{picked[p.id] ? '✓' : ''}</span>}
