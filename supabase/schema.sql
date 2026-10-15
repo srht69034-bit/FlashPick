@@ -33,6 +33,9 @@ create table public.photos (
   original_name text not null,
   position int not null default 0,
   selected boolean not null default false,
+  rejected boolean not null default false,
+  w int,
+  h int,
   album_page int,
   album_pos int,
   note text,
@@ -106,8 +109,12 @@ create policy "photos: client update (open only)" on public.photos for update
   with check (exists (select 1 from public.galleries g where g.id = gallery_id and g.client_id = auth.uid() and g.status = 'open'));
 
 -- ---------- הרשאות ברמת עמודה + ניתוק מוחלט של משתמשים אנונימיים ----------
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables    in schema public to authenticated, service_role;
+grant all on all sequences in schema public to authenticated, service_role;
+grant execute on all functions in schema public to authenticated, service_role;
 revoke update on public.photos from authenticated;
-grant  update (selected, album_page, album_pos, note) on public.photos to authenticated;
+grant  update (selected, rejected, album_page, album_pos, note) on public.photos to authenticated;
 revoke all on all tables in schema public from anon;
 
 -- ---------- אחסון פרטי (Bucket לא ציבורי) ----------

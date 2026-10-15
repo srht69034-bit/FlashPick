@@ -10,6 +10,8 @@ Next.js 14 + Supabase + Vercel. הכול על שכבות חינמיות.
 3. **Authentication → Providers → Email**: כבי את **Confirm email** (כדי שהרשמה של צלמת תעבוד מיד, בלי מגבלת המיילים של התוכנית החינמית).
 4. **Project Settings → API**: העתיקי `Project URL`, `anon public` ו-`service_role`.
 
+> **כבר הרצת את הגרסה הקודמת של schema.sql?** הריצי רק את `supabase/migration-v2.sql` (פעם אחת) ב-SQL Editor. הוא מוסיף ✗/גדלי תמונות והרשאות.
+
 ### 2. מייל (חינם, דרך Gmail)
 חשבון Google ← אבטחה ← אימות דו-שלבי ← **סיסמאות אפליקציה** ← צרי סיסמה. זה ערך `SMTP_PASS`.
 ללא הגדרה הכול עובד, פשוט לא יישלחו מיילים (ואפשר להעתיק את פרטי הלקוחה ידנית).

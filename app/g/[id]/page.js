@@ -2,8 +2,22 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import AuthForm from '@/components/AuthForm';
+import Justified from '@/components/Justified';
 import { supabase, authedFetch, fetchPhotos, signedUrls } from '@/lib/supabase';
 import { useUser } from '@/lib/useUser';
+
+const stateOf = (p) => (p.selected ? 'yes' : p.rejected ? 'no' : null);
+
+function Ring({ value, max }) {
+  const r = 22, c = 2 * Math.PI * r, pct = Math.min(1, value / max);
+  return (
+    <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
+      <circle cx="28" cy="28" r={r} className="ring-bg" />
+      <circle cx="28" cy="28" r={r} className="ring-fg" strokeDasharray={c} strokeDashoffset={c * (1 - pct)} transform="rotate(-90 28 28)" />
+      <text x="28" y="33" textAnchor="middle" className="ring-t">{value}</text>
+    </svg>
+  );
+}
 
 export default function ClientGallery() {
   const { id } = useParams();
@@ -12,16 +26,19 @@ export default function ClientGallery() {
   const [photos, setPhotos] = useState([]);
   const [urls, setUrls] = useState({});
   const [tab, setTab] = useState('pick');
-  const [onlySel, setOnlySel] = useState(false);
+  const [view, setView] = useState('all');
   const [lb, setLb] = useState(null);
+  const [cmp, setCmp] = useState([]);
+  const [cmpOpen, setCmpOpen] = useState(false);
+  const [intro, setIntro] = useState(false);
+  const [albumOn, setAlbumOn] = useState(false);
+  const [hideNotice, setHideNotice] = useState(false);
   const [toast, setToast] = useState('');
   const [pageCount, setPageCount] = useState(1);
   const [pageNotes, setPageNotes] = useState({});
   const [over, setOver] = useState(null);
-  const [basketOver, setBasketOver] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const say = (m) => { setToast(m); setTimeout(() => setToast(''), 2400); };
+  const [touchX, setTouchX] = useState(null);
 
   const load = useCallback(async () => {
     const { data: gal } = await supabase.from('galleries').select('*').eq('id', id).maybeSingle();
@@ -29,72 +46,74 @@ export default function ClientGallery() {
     setG(gal); setPageNotes(gal.page_notes || {});
     const ph = await fetchPhotos(id);
     setPhotos(ph);
-    setPageCount(Math.max(1, ...ph.map((p) => p.album_page || 0)));
+    const maxPage = Math.max(0, ...ph.map((p) => p.album_page || 0));
+    setPageCount(Math.max(1, maxPage));
+    if (maxPage > 0) setAlbumOn(true);
     setUrls(await signedUrls(ph.map((p) => p.path)));
   }, [id]);
 
   useEffect(() => { if (user) load(); }, [user?.id, load]); // eslint-disable-line
+  useEffect(() => { if (user && !sessionStorage.getItem('intro-' + id)) setIntro(true); }, [user?.id, id]); // eslint-disable-line
 
-  // חידוש הקישורים החתומים לפני שהם פגים
   useEffect(() => {
     if (!user || !photos.length) return;
     const t = setInterval(async () => setUrls(await signedUrls(photos.map((p) => p.path))), 50 * 60 * 1000);
     return () => clearInterval(t);
   }, [user?.id, photos.length]); // eslint-disable-line
 
+  // ---- נתונים נגזרים (לפני כל return מוקדם) ----
+  const locked = g?.status === 'submitted';
+  const quota = g?.quota || 0;
+  const selected = photos.filter((p) => p.selected);
+  const count = selected.length;
+  const rejectedN = photos.filter((p) => p.rejected).length;
+  const shown = photos.filter((p) => view === 'all' || (view === 'yes' && p.selected) || (view === 'no' && p.rejected) || (view === 'none' && !p.selected && !p.rejected));
+  const cur = lb !== null ? shown[lb] : null;
+  const say = (m) => { setToast(m); setTimeout(() => setToast(''), 2600); };
+  const patch = (pid, f) => setPhotos((prev) => prev.map((p) => (p.id === pid ? { ...p, ...f } : p)));
+
   useEffect(() => {
     if (lb === null) return;
     const onKey = (e) => {
       if (e.key === 'Escape') setLb(null);
-      if (e.key === 'ArrowLeft') setLb((i) => Math.min(i + 1, shown.length - 1));
-      if (e.key === 'ArrowRight') setLb((i) => Math.max(i - 1, 0));
+      else if (e.key === 'ArrowLeft') setLb((i) => Math.min(i + 1, shown.length - 1));
+      else if (e.key === 'ArrowRight') setLb((i) => Math.max(i - 1, 0));
+      else if (cur && (e.key === 'v' || e.key === 'V' || e.key === 'ז')) mark(cur, 'yes');
+      else if (cur && (e.key === 'x' || e.key === 'X' || e.key === 'ס')) mark(cur, 'no');
+      else if (cur && (e.key === 'c' || e.key === 'C' || e.key === 'ב')) toggleCmp(cur.id);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }); // eslint-disable-line
 
-  if (user === undefined) return <main className="page dark"><div className="wrap mute">טוען…</div></main>;
-  if (user === null) return (
-    <main className="page dark"><div className="authbox">
-      <h1>הגלריה שלך מחכה</h1>
-      <p className="mute">היכנסי עם המייל והסיסמה שקיבלת מהצלמת.</p>
-      <AuthForm />
-    </div></main>
-  );
-  if (g === false) return (
-    <main className="page dark"><div className="authbox">
-      <h1>אין גישה לגלריה הזו</h1>
-      <p className="mute">ייתכן שנכנסת עם משתמש אחר, או שהגלריה נמחקה.</p>
-      <button className="btn" onClick={() => supabase.auth.signOut()}>החלפת משתמש</button>
-    </div></main>
-  );
-  if (!g) return <main className="page dark"><div className="wrap mute">טוען…</div></main>;
-
-  const locked = g.status === 'submitted';
-  const selected = photos.filter((p) => p.selected);
-  const count = selected.length, quota = g.quota;
-  const shown = onlySel ? selected : photos;
-  const patch = (pid, f) => setPhotos((prev) => prev.map((p) => (p.id === pid ? { ...p, ...f } : p)));
-  const drag = (p) => ({ draggable: !locked, onDragStart: (e) => e.dataTransfer.setData('text/plain', p.id) });
-
-  async function toggle(p) {
+  async function mark(p, next) {
     if (locked) return;
-    if (!p.selected && count >= quota) return say(`הגעת למכסה של ${quota} תמונות. אפשר להסיר תמונה כדי לבחור אחרת.`);
-    const f = p.selected ? { selected: false, album_page: null, album_pos: null } : { selected: true };
+    if (stateOf(p) === next) next = null;
+    if (next === 'yes' && count >= quota) return say(`הגעת למכסה של ${quota} תמונות. אפשר להסיר תמונה כדי לבחור אחרת.`);
+    const f = { selected: next === 'yes', rejected: next === 'no' };
+    if (next !== 'yes') { f.album_page = null; f.album_pos = null; }
+    const prev = { selected: p.selected, rejected: p.rejected, album_page: p.album_page, album_pos: p.album_pos };
     patch(p.id, f);
     const { error } = await supabase.from('photos').update(f).eq('id', p.id);
-    if (error) { patch(p.id, { selected: p.selected, album_page: p.album_page, album_pos: p.album_pos }); say('השמירה נכשלה, נסי שוב'); }
+    if (error) { patch(p.id, prev); say('השמירה נכשלה, נסי שוב'); }
+    else if (next === 'yes' && count + 1 === quota) say('🎉 מילאת את המכסה! אפשר לאשר.');
+  }
+
+  function toggleCmp(pid) {
+    const n = cmp.includes(pid) ? cmp.filter((x) => x !== pid) : [...cmp, pid].slice(-2);
+    setCmp(n);
+    if (n.length === 2) { setCmpOpen(true); setLb(null); }
+    else if (!cmp.includes(pid)) say('בחרי עוד תמונה אחת להשוואה');
   }
 
   async function place(pid, page, beforeId = null) {
     const moving = photos.find((p) => p.id === pid);
     if (!moving?.selected) return;
-    const target = selected.filter((p) => p.album_page === page && p.id !== pid)
-      .sort((a, b) => (a.album_pos ?? 0) - (b.album_pos ?? 0));
+    const target = selected.filter((p) => p.album_page === page && p.id !== pid).sort((a, b) => (a.album_pos ?? 0) - (b.album_pos ?? 0));
     const at = beforeId ? target.findIndex((p) => p.id === beforeId) : -1;
     target.splice(at < 0 ? target.length : at, 0, moving);
     const ups = target.map((p, i) => ({ id: p.id, album_page: page, album_pos: i }));
-    setPhotos((prev) => prev.map((p) => ups.find((u) => u.id === p.id) ? { ...p, ...ups.find((u) => u.id === p.id) } : p));
+    setPhotos((prev) => prev.map((p) => { const u = ups.find((x) => x.id === p.id); return u ? { ...p, ...u } : p; }));
     const res = await Promise.all(ups.map((u) => supabase.from('photos').update({ album_page: u.album_page, album_pos: u.album_pos }).eq('id', u.id)));
     if (res.some((r) => r.error)) say('השמירה נכשלה, נסי שוב');
   }
@@ -121,40 +140,104 @@ export default function ClientGallery() {
     load();
   }
 
-  const img = (p) => urls[p.path] && <img src={urls[p.path]} alt="" draggable={false} loading="lazy" decoding="async" />;
+  // ---- מצבי טעינה / כניסה ----
+  if (user === undefined) return <main className="page"><div className="wrap mute" style={{ paddingTop: 40 }}>טוען…</div></main>;
+  if (user === null) return (
+    <main className="page"><div className="authbox">
+      <span className="brand"><i />FlashPick</span>
+      <h1>הגלריה שלך מחכה</h1>
+      <p className="mute">היכנסי עם המייל והסיסמה שקיבלת מהצלמת.</p>
+      <AuthForm />
+    </div></main>
+  );
+  if (g === false) return (
+    <main className="page"><div className="authbox">
+      <h1>אין גישה לגלריה הזו</h1>
+      <p className="mute">ייתכן שנכנסת עם משתמש אחר, או שהגלריה נמחקה.</p>
+      <button className="btn" onClick={() => supabase.auth.signOut()}>החלפת משתמש</button>
+    </div></main>
+  );
+  if (!g) return <main className="page"><div className="wrap mute" style={{ paddingTop: 40 }}>טוען…</div></main>;
+
+  const img = (p, extra) => urls[p.path] && <img src={urls[p.path]} alt="" draggable={false} loading="lazy" decoding="async" {...extra} />;
+  const items = shown.map((p, i) => ({ id: p.id, ratio: p.w && p.h ? p.w / p.h : 0.75, p, i }));
   const unplaced = selected.filter((p) => !p.album_page);
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
-  const cur = lb !== null ? shown[lb] : null;
+  const drag = (p) => ({ draggable: !locked, onDragStart: (e) => e.dataTransfer.setData('text/plain', p.id) });
+  const cmpPhotos = cmp.map((x) => photos.find((p) => p.id === x)).filter(Boolean);
+  const filt = (k, label) => <button className={view === k ? 'on' : ''} onClick={() => { setView(k); setLb(null); }}>{label}</button>;
 
   return (
-    <main className="page dark" onContextMenu={(e) => e.preventDefault()}>
-      <div className="wrap" style={{ paddingBottom: 120 }}>
-        <div className="top">
-          <div><h1>{g.title}</h1>
-            <div className="mute">{locked ? 'הבחירה נשלחה לצלמת ✔' : `בחרי עד ${quota} תמונות. לחיצה על תמונה בוחרת אותה.`}</div></div>
-          <button className="btn sm" onClick={() => supabase.auth.signOut()}>יציאה</button>
+    <main className="page" onContextMenu={(e) => e.preventDefault()}>
+      {intro && (
+        <div className="intro">
+          {photos[0] && urls[photos[0].path] && <div className="bgimg" style={{ backgroundImage: `url(${urls[photos[0].path]})` }} />}
+          <div className="box">
+            <div className="mute" style={{ marginBottom: 8 }}>{g.client_name ? `שלום ${g.client_name}` : 'שלום'}</div>
+            <h1>{g.title}</h1>
+            <p style={{ fontSize: 18, margin: 0, opacity: .9 }}>בחרי עד <b>{quota}</b> תמונות. אין לחץ, אפשר לשנות עד האישור הסופי.</p>
+            <div className="hints"><span>✓ בחירה</span><span>✗ פסילה</span><span>⇄ השוואה בין שתיים</span></div>
+            <button className="btn pri" onClick={() => { sessionStorage.setItem('intro-' + id, '1'); setIntro(false); }}>בואי נתחיל</button>
+          </div>
         </div>
+      )}
 
-        <div className="tabs">
-          <button className={tab === 'pick' ? 'on' : ''} onClick={() => setTab('pick')}>בחירת תמונות</button>
-          <button className={tab === 'album' ? 'on' : ''} onClick={() => setTab('album')}>סידור האלבום</button>
+      <header className="ghead"><div className="in">
+        <Ring value={count} max={quota} />
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <h1>{g.title}</h1>
+          <div className="mute small">{locked ? 'הבחירה נשלחה לצלמת ✔' : `נבחרו ${count} מתוך ${quota} · נפסלו ${rejectedN}`}</div>
         </div>
+        <div className="row">
+          {cmp.length === 1 && <span className="mute small">נבחרה תמונה להשוואה</span>}
+          {!locked && <button className="btn pri" disabled={busy || count === 0} onClick={submit}>{busy ? 'שולחת…' : 'אישור ושליחה לצלמת'}</button>}
+          <button className="btn ghost sm" onClick={() => supabase.auth.signOut()}>יציאה</button>
+        </div>
+      </div></header>
+
+      <div className="wrap" style={{ paddingTop: 14 }}>
+        {locked && <div className="done-banner">הבחירה נשלחה לצלמת. תודה! היא תיצור איתך קשר להמשך.</div>}
+
+        {albumOn && (
+          <div className="filters" style={{ marginBottom: 12 }}>
+            <button className={tab === 'pick' ? 'on' : ''} onClick={() => setTab('pick')}>בחירת תמונות</button>
+            <button className={tab === 'album' ? 'on' : ''} onClick={() => setTab('album')}>עיצוב האלבום</button>
+          </div>
+        )}
 
         {tab === 'pick' && (
           <>
-            <label className="row mute" style={{ marginBottom: 12 }}>
-              <input type="checkbox" checked={onlySel} onChange={(e) => setOnlySel(e.target.checked)} /> להציג רק את הנבחרות
-            </label>
-            <div className="photos">
-              {shown.map((p, i) => (
-                <div key={p.id} className={'ph' + (p.selected ? ' sel' : '')} {...drag(p)} role="button" tabIndex={0} aria-pressed={p.selected}
-                  onClick={() => toggle(p)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle(p))}>
-                  {img(p)}
-                  <span className="tick">{p.selected ? '✓' : ''}</span>
-                  <button className="zoom" onClick={(e) => { e.stopPropagation(); setLb(i); }}>הגדלה</button>
-                </div>
-              ))}
+            <div className="filters" style={{ marginBottom: 14 }}>
+              {filt('all', `הכול (${photos.length})`)}
+              {filt('yes', `✓ נבחרו (${count})`)}
+              {filt('no', `✗ נפסלו (${rejectedN})`)}
+              {filt('none', 'עוד לא סימנתי')}
             </div>
+
+            {!albumOn && !locked && !hideNotice && count > 0 && (
+              <div className="notice">
+                <div><b>אופציונלי: יש לך עיצוב מסוים בראש לאלבום?</b><div className="mute small">אפשר לסדר את התמונות בעמודים ולכתוב הערות. אם לא, הצלמת תעצב עבורך.</div></div>
+                <div className="row"><button className="btn sm" onClick={() => { setAlbumOn(true); setTab('album'); }}>כן, לסדר אלבום</button>
+                  <button className="btn ghost sm" onClick={() => setHideNotice(true)}>לא צריך</button></div>
+              </div>
+            )}
+
+            {shown.length === 0 && <div className="empty mute">אין כאן תמונות בקטגוריה הזו.</div>}
+            <Justified items={items} render={({ p, i }) => (
+              <div className={'tile ' + (stateOf(p) || '')} onClick={() => setLb(i)}>
+                {img(p)}
+                {stateOf(p) === 'yes' && <span className="tag yes">✓</span>}
+                {stateOf(p) === 'no' && <span className="tag no">✗</span>}
+                {cmp.includes(p.id) && <span className="tag cmp">⇄</span>}
+                {!locked && (
+                  <div className="acts" onClick={(e) => e.stopPropagation()}>
+                    <button className={'rb no' + (stateOf(p) === 'no' ? ' on' : '')} aria-label="פסילה" onClick={() => mark(p, 'no')}>✗</button>
+                    <button className={'rb cmp' + (cmp.includes(p.id) ? ' on' : '')} aria-label="השוואה" onClick={() => toggleCmp(p.id)}>⇄</button>
+                    <button className={'rb yes' + (stateOf(p) === 'yes' ? ' on' : '')} aria-label="בחירה" onClick={() => mark(p, 'yes')}>✓</button>
+                  </div>
+                )}
+              </div>
+            )} />
           </>
         )}
 
@@ -162,12 +245,12 @@ export default function ClientGallery() {
           <div className="album">
             <aside className="card tray">
               <b>ממתינות לשיבוץ ({unplaced.length})</b>
-              <p className="mute" style={{ margin: '4px 0 10px' }}>גררי לעמוד, או בחרי עמוד מהרשימה.</p>
-              {count === 0 && <p className="mute">קודם בוחרים תמונות בלשונית הראשונה.</p>}
-              <div className="photos">
+              <p className="mute small" style={{ margin: '4px 0 0' }}>גררי לעמוד, או בחרי עמוד מהרשימה.</p>
+              {count === 0 && <p className="mute small">קודם בוחרים תמונות בלשונית הראשונה.</p>}
+              <div className="trayg">
                 {unplaced.map((p) => (
                   <div key={p.id}>
-                    <div className="ph" {...drag(p)}>{img(p)}</div>
+                    <div className="tile sq" {...drag(p)} style={{ cursor: 'grab' }}>{img(p)}</div>
                     <select className="inp" value="" disabled={locked} onChange={(e) => e.target.value && place(p.id, +e.target.value)}>
                       <option value="">העברה לעמוד…</option>
                       {pages.map((n) => <option key={n} value={n}>עמוד {n}</option>)}
@@ -178,7 +261,7 @@ export default function ClientGallery() {
             </aside>
             <div>
               {pages.map((n) => {
-                const items = selected.filter((p) => p.album_page === n).sort((a, b) => (a.album_pos ?? 0) - (b.album_pos ?? 0));
+                const its = selected.filter((p) => p.album_page === n).sort((a, b) => (a.album_pos ?? 0) - (b.album_pos ?? 0));
                 return (
                   <section key={n} className="card pagebox">
                     <div className="row">
@@ -189,14 +272,14 @@ export default function ClientGallery() {
                     <div className={'drops' + (over === n ? ' over' : '')}
                       onDragOver={(e) => { e.preventDefault(); setOver(n); }} onDragLeave={() => setOver(null)}
                       onDrop={(e) => { e.preventDefault(); setOver(null); const pid = e.dataTransfer.getData('text/plain'); if (pid && !locked) place(pid, n); }}>
-                      {items.length === 0 && <span className="mute">גררי לכאן תמונות</span>}
-                      {items.map((p) => (
+                      {its.length === 0 && <span className="mute small">גררי לכאן תמונות</span>}
+                      {its.map((p) => (
                         <div key={p.id} className="item"
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setOver(null); const pid = e.dataTransfer.getData('text/plain'); if (pid && pid !== p.id && !locked) place(pid, n, p.id); }}>
-                          <div className="ph" {...drag(p)}>
+                          <div className="tile sq" {...drag(p)} style={{ cursor: 'grab' }}>
                             {img(p)}
-                            {!locked && <button className="zoom" style={{ opacity: 1 }} onClick={() => unplace(p.id)} aria-label="הסרה מהעמוד">✕</button>}
+                            {!locked && <button className="rb del" style={{ opacity: 1 }} onClick={() => unplace(p.id)} aria-label="הסרה מהעמוד">✕</button>}
                           </div>
                           <textarea className="inp" placeholder="הערה לתמונה" disabled={locked} value={p.note || ''}
                             onChange={(e) => patch(p.id, { note: e.target.value })} onBlur={(e) => saveNote(p.id, e.target.value)} />
@@ -206,37 +289,55 @@ export default function ClientGallery() {
                   </section>
                 );
               })}
-              {!locked && <button className="btn" onClick={() => setPageCount(pageCount + 1)}>הוספת עמוד</button>}
+              {!locked && <button className="btn" onClick={() => setPageCount(pageCount + 1)}>＋ הוספת עמוד</button>}
             </div>
           </div>
         )}
       </div>
 
-      <div className={'basket' + (basketOver ? ' over' : '')}
-        onDragOver={(e) => { e.preventDefault(); setBasketOver(true); }} onDragLeave={() => setBasketOver(false)}
-        onDrop={(e) => { e.preventDefault(); setBasketOver(false); const p = photos.find((x) => x.id === e.dataTransfer.getData('text/plain')); if (p && !p.selected) toggle(p); }}>
-        <div className="in">
-          <div className="cnt">{count} / {quota}</div>
-          <div style={{ flex: 1 }}>
-            <div className="bar"><i style={{ width: `${Math.min(100, (count / quota) * 100)}%` }} /></div>
-            <div className="mute">{locked ? 'נשלח לצלמת' : count >= quota ? 'מילאת את המכסה. אפשר לסדר את האלבום ולאשר.' : `נשארו ${quota - count} לבחירה (אפשר גם לגרור תמונה לכאן)`}</div>
-          </div>
-          {!locked && <button className="btn pri" disabled={busy || count === 0} onClick={submit}>{busy ? 'שולחת…' : 'אישור ושליחה לצלמת'}</button>}
-        </div>
-      </div>
-
       {cur && (
-        <div className="lb" onClick={() => setLb(null)}>
+        <div className="lb" onClick={() => setLb(null)}
+          onTouchStart={(e) => setTouchX(e.touches[0].clientX)}
+          onTouchEnd={(e) => { if (touchX === null) return; const d = e.changedTouches[0].clientX - touchX; setTouchX(null);
+            if (d < -60) setLb(Math.min(lb + 1, shown.length - 1)); else if (d > 60) setLb(Math.max(lb - 1, 0)); }}>
           <img src={urls[cur.path]} alt="" draggable={false} onClick={(e) => e.stopPropagation()} />
-          <button style={{ top: 16, insetInlineEnd: 16 }} onClick={() => setLb(null)} aria-label="סגירה">✕</button>
-          <button style={{ top: '50%', right: 16 }} onClick={(e) => { e.stopPropagation(); setLb(Math.max(lb - 1, 0)); }} aria-label="הקודמת">›</button>
-          <button style={{ top: '50%', left: 16 }} onClick={(e) => { e.stopPropagation(); setLb(Math.min(lb + 1, shown.length - 1)); }} aria-label="הבאה">‹</button>
+          <span className="cnt">{lb + 1} / {shown.length}</span>
+          <button className="x" onClick={() => setLb(null)} aria-label="סגירה">✕</button>
+          <button className="nav-b" style={{ right: 16 }} onClick={(e) => { e.stopPropagation(); setLb(Math.max(lb - 1, 0)); }} aria-label="הקודמת">›</button>
+          <button className="nav-b" style={{ left: 16 }} onClick={(e) => { e.stopPropagation(); setLb(Math.min(lb + 1, shown.length - 1)); }} aria-label="הבאה">‹</button>
           {!locked && (
-            <button className="btn pri" style={{ bottom: 22, left: '50%', transform: 'translateX(-50%)', width: 'auto', borderRadius: 12, fontSize: 16, padding: '0 22px' }}
-              onClick={(e) => { e.stopPropagation(); toggle(cur); }}>{cur.selected ? 'הסרת הבחירה' : 'בחירת התמונה'}</button>
+            <div className="bot" onClick={(e) => e.stopPropagation()}>
+              <button className={'big no' + (stateOf(cur) === 'no' ? ' on' : '')} onClick={() => mark(cur, 'no')}>✗ פסילה</button>
+              <button className={'big cmp' + (cmp.includes(cur.id) ? ' on' : '')} onClick={() => toggleCmp(cur.id)}>⇄ השוואה</button>
+              <button className={'big yes' + (stateOf(cur) === 'yes' ? ' on' : '')} onClick={() => mark(cur, 'yes')}>✓ בחירה</button>
+            </div>
           )}
         </div>
       )}
+
+      {cmpOpen && cmpPhotos.length === 2 && (
+        <div className="cmpv">
+          <div className="top">
+            <b>השוואה בין שתי תמונות</b>
+            <button className="btn sm" onClick={() => { setCmpOpen(false); setCmp([]); }}>סיום</button>
+          </div>
+          <div className="panes">
+            {cmpPhotos.map((p) => (
+              <div key={p.id} className={'pane ' + (stateOf(p) || '')}>
+                {urls[p.path] && <img src={urls[p.path]} alt="" draggable={false} />}
+                {!locked && (
+                  <div className="row">
+                    <button className={'big no' + (stateOf(p) === 'no' ? ' on' : '')} onClick={() => mark(p, 'no')}>✗</button>
+                    <button className={'big yes' + (stateOf(p) === 'yes' ? ' on' : '')} onClick={() => mark(p, 'yes')}>✓ בחירה</button>
+                    <button className="big" onClick={() => { setCmp(cmp.filter((x) => x !== p.id)); setCmpOpen(false); }}>החלפה</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {toast && <div className="toast">{toast}</div>}
     </main>
   );

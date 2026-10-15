@@ -10,6 +10,7 @@ export default function StudioLogin() {
   useEffect(() => { if (user) router.replace('/studio'); }, [user, router]);
   return (
     <main className="page"><div className="authbox">
+      <span className="brand"><i />FlashPick</span>
       <h1>אזור צלמות</h1>
       <p className="mute">כניסה או הרשמה</p>
       <AuthForm studio onDone={() => router.replace('/studio')} />
